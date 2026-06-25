@@ -1,0 +1,41 @@
+# ============================================
+# قالب استراتيجية: XAUUSD Smart Money Concepts
+# ============================================
+name: "XAUUSD_SMC_MTF"
+symbol: "XAUUSD"
+description: >
+  استراتيجية تعتمد على التوافق بين عدة فريمات زمنية (Multi-Timeframe Confluence)
+  لاكتشاف Order Blocks وFair Value Gaps حول نقاط BOS/CHoCH.
+
+timeframes:
+  trend_filter: ["4h", "1h"]      # تحدد الاتجاه العام (لا يُتداول عكسها)
+  setup: ["15m", "5m"]            # فريم تكوّن الإشارة (OB/FVG)
+  entry: ["1m"]                   # فريم الدخول الدقيق (تأكيد سعري)
+
+entry_rules:
+  required_structures: ["BOS", "CHoCH", "OB"]
+  min_confidence: 0.55
+  require_fvg_confluence: true     # يفضّل أن يكون هناك FVG قريب من منطقة OB
+  max_distance_pips_to_ob: 50      # أقصى مسافة سعرية مقبولة لاعتبار OB صالحاً للدخول
+
+risk_management:
+  reward_risk_ratio: 2.0           # نسبة الربح إلى الخسارة المستهدفة
+  sl_buffer: 0.5                   # هامش إضافي (بالدولار) أسفل/أعلى منطقة OB لوضع SL
+  risk_per_trade_pct: 1.0          # % من رأس المال لكل صفقة
+  max_daily_trades: 5
+  max_daily_loss_pct: 3.0
+
+sessions:
+  # أوقات تداول مفضلة بتوقيت UTC (تتزامن غالباً مع تقلبات الذهب الأعلى)
+  london_open: "07:00-10:00"
+  ny_open: "12:30-15:30"
+  avoid_low_liquidity: true
+
+notifications:
+  telegram: true
+  notify_on: ["BOS", "CHoCH", "OB"]   # لا إشعار لكل FVG لتجنب الإسبام
+
+llm:
+  enabled: true
+  min_structures_for_llm_call: 1
+  language: "ar"

@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: xauusd_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-traderpass}
+      POSTGRES_DB: ${POSTGRES_DB:-xauusd_trading}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trader}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: xauusd_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trader}:${POSTGRES_PASSWORD:-traderpass}@db:5432/${POSTGRES_DB:-xauusd_trading}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-changeme}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./strategies:/app/strategies
+      - ./data:/app/data
+
+volumes:
+  pgdata:

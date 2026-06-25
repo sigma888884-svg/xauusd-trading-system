@@ -1,0 +1,21 @@
+{
+  "secret": "changeme",
+  "symbol": "XAUUSD",
+  "timeframe": "15m",
+  "alert_type": "bos",
+  "price": 2345.67,
+  "time": "2026-06-25T10:15:00Z",
+  "message": "BOS صاعد مكتشف من Pine Script على فريم 15m",
+  "candles": [
+    {"time": "2026-06-25T09:00:00Z", "open": 2330.1, "high": 2332.4, "low": 2329.0, "close": 2331.8, "volume": 1200},
+    {"time": "2026-06-25T09:15:00Z", "open": 2331.8, "high": 2333.0, "low": 2330.5, "close": 2332.6, "volume": 980},
+    {"time": "2026-06-25T09:30:00Z", "open": 2332.6, "high": 2334.1, "low": 2331.9, "close": 2333.4, "volume": 1100},
+    {"time": "2026-06-25T09:45:00Z", "open": 2333.4, "high": 2335.0, "low": 2332.0, "close": 2329.5, "volume": 1500},
+    {"time": "2026-06-25T10:00:00Z", "open": 2329.5, "high": 2330.2, "low": 2327.8, "close": 2328.9, "volume": 1700},
+    {"time": "2026-06-25T10:15:00Z", "open": 2328.9, "high": 2347.0, "low": 2328.5, "close": 2345.67, "volume": 3200}
+  ],
+  "extra": {
+    "source": "pine_script_v1",
+    "indicator": "SMC_BOS_CHOCH_OB_FVG"
+  }
+}
