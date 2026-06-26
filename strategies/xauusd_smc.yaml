@@ -33,9 +33,24 @@ sessions:
 
 notifications:
   telegram: true
-  notify_on: ["BOS", "CHoCH", "OB"]   # لا إشعار لكل FVG لتجنب الإسبام
+  notify_on: ["BOS", "CHoCH", "OB", "SND", "SNR"]   # لا إشعار لكل FVG لتجنب الإسبام
+  daily_summary: true
 
 llm:
   enabled: true
   min_structures_for_llm_call: 1
   language: "ar"
+
+news_filter:
+  enabled: true
+  buffer_minutes_before: 30     # إيقاف الدخول 30 دقيقة قبل خبر عالي التأثير
+  buffer_minutes_after: 30      # إيقاف الدخول 30 دقيقة بعد خبر عالي التأثير
+
+ml_filter:
+  enabled: true
+  min_label: "medium"           # strong / medium / weak — الحد الأدنى المقبول للتنفيذ
+  min_trades_for_training: 50
+
+rl_agent:
+  enabled: false                # تشغيل يدوي حالياً عبر app/rl_agent.py (تحسين دوري للمعاملات)
+  epsilon: 0.2

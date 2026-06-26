@@ -1,4 +1,10 @@
-# XAUUSD Smart Trading System (MVP)
+# XAUUSD Smart Trading System
+
+> 🔄 **تحديث (المرحلة 2):** تمت إضافة محرك Backtest حقيقي (Candle-by-Candle)،
+> Rules Engine موسّع (Liquidity Sweep, Premium/Discount, SND/SNR)، طبقة ML Filter،
+> طبقة RL Agent، وحدة أخبار (News + Economic Calendar)، وسكربتات بيانات تاريخية
+> كاملة (Dukascopy). راجع قسم "بنية المشروع الكاملة" أسفل الصفحة.
+
 
 نظام تداول ذكي (MVP) لزوج الذهب XAUUSD يتكوّن من:
 
@@ -198,3 +204,95 @@ uvicorn app.main:app --reload
   مزود بيانات مباشر (Broker API) بدل الاعتماد الكامل على تنبيهات Pine Script.
 - لا تستخدم هذا النظام لتداول حقيقي دون اختبار موسّع (Forward Testing / Paper Trading)
   ومراجعة من شخص مختص بإدارة المخاطر.
+
+---
+
+## بنية المشروع الكاملة (المرحلة 2)
+
+```
+trading_system/
+├── data_pipeline/
+│   ├── data_downloader.py    # تحميل 10 سنوات تِك من Dukascopy (شغّله محليًا، يحتاج إنترنت كامل)
+│   ├── data_cleaner.py       # تنظيف التِك (تكرار، توقيت، قفزات شاذة)
+│   └── data_resampler.py     # بناء شموع 1m/5m/15m/1h/4h من التِك
+├── database_setup.py          # تهيئة كل جداول Postgres دفعة واحدة
+├── app/
+│   ├── data_loader.py         # استيراد CSV لقاعدة البيانات + قراءة شموع منها
+│   ├── rules_engine.py        # BOS/CHoCH/FVG/OB + SND/SNR + Liquidity Sweep + Premium/Discount
+│   ├── backtester.py          # محرك Candle-by-Candle: Win Rate, Profit Factor, Expectancy, Max DD
+│   ├── ml_filter.py           # تصنيف الإشارات (strong/medium/weak) + تدريب من تاريخ الصفقات
+│   ├── rl_agent.py            # Epsilon-Greedy Bandit لتحسين معاملات الاستراتيجية تلقائياً
+│   ├── news_module.py         # NewsAPI + Economic Calendar + X (Twitter) placeholder
+│   ├── telegram_bot.py        # إشعارات إشارات/صفقات/أخبار/ملخص يومي
+│   ├── llm_interpreter.py     # تفسير الإشارات عبر LLM
+│   ├── main.py                # FastAPI app + /webhook/tradingview + /health
+│   └── routes/
+│       ├── signals.py         # /alerts , /signals
+│       ├── backtest.py        # /backtest/run
+│       └── news.py            # /news , /news/refresh , /news/near-high-impact
+```
+
+## خطوات تشغيل المرحلة الجديدة محليًا
+
+### 1) تحميل وتحضير البيانات التاريخية (على جهازك، ليس على سيرفر مقيّد الشبكة)
+```bash
+pip install -r requirements.txt requests
+python data_pipeline/data_downloader.py --years 10 --out data/xauusd_ticks_raw.csv
+python data_pipeline/data_cleaner.py --in data/xauusd_ticks_raw.csv --out data/xauusd_ticks_clean.csv
+python data_pipeline/data_resampler.py --in data/xauusd_ticks_clean.csv --outdir data/
+```
+ينتج: `data/xauusd_1m.csv`, `xauusd_5m.csv`, `xauusd_15m.csv`, `xauusd_1h.csv`, `xauusd_4h.csv`
+
+### 2) تهيئة قاعدة البيانات واستيراد البيانات
+```bash
+python database_setup.py
+python -c "from app.data_loader import import_csv_to_db; print(import_csv_to_db('data/xauusd_1h.csv', 'XAUUSD', '1h'))"
+```
+
+### 3) تشغيل Backtest الحقيقي
+```bash
+curl -X POST http://localhost:8000/backtest/run \
+  -H "Content-Type: application/json" \
+  -d '{"strategy_file": "strategies/xauusd_smc.yaml", "csv_file": "data/xauusd_1h.csv"}'
+```
+الاستجابة تشمل الآن: `win_rate_pct`, `profit_factor`, `expectancy`, `max_drawdown_pct` (مقاييس حقيقية، لا أرقام مفترضة).
+
+### 4) تحسين المعاملات عبر RL Agent (اختياري)
+```python
+from app.rl_agent import RLAgent, default_candidate_overrides
+from app.backtester import load_strategy, load_csv
+
+strategy = load_strategy("strategies/xauusd_smc.yaml")
+candles = load_csv("data/xauusd_1h.csv").to_dict("records")
+agent = RLAgent(strategy, default_candidate_overrides())
+best = agent.optimize(candles, n_iterations=50)
+print(best.config, best.avg_reward)
+```
+
+### 5) تدريب ML Filter من تاريخ صفقات حقيقي
+```python
+from app.ml_filter import MLFilter
+ml = MLFilter()
+ml.train_from_structures_and_outcomes(structures_list, outcomes_list)  # outcomes: 1=فوز, 0=خسارة
+```
+
+### 6) تفعيل الأخبار (اختياري، يحتاج مفاتيح API)
+أضف في `.env`:
+```
+NEWSAPI_KEY=...           # من newsapi.org (خطة مجانية محدودة متاحة)
+TRADING_ECONOMICS_KEY=... # من tradingeconomics.com (مدفوع غالباً)
+TWITTER_BEARER_TOKEN=...  # من X API (مدفوع منذ 2023)
+```
+ثم: `POST /news/refresh` لجلب آخر الأخبار وتخزينها.
+
+## ملاحظات صادقة عن هذه المرحلة
+
+- **لا يوجد ضمان نسبة نجاح معيّنة** (89% أو غيرها) — الأرقام الحقيقية تخرج فقط من
+  تشغيل Backtester على بيانات حقيقية كافية (10 سنوات)، وهذا يحتاج منك تشغيل
+  `data_downloader.py` على جهازك الشخصي أولاً (بيئة الت طوير المقيّدة لا تصل لمصادر
+  بيانات مالية خارجية).
+- **Twitter/X API** أصبح مدفوعاً منذ 2023، فالكود جاهز للتفعيل لكن يحتاج اشتراك.
+- **RL Agent** هنا تصميمه Multi-Armed Bandit بسيط ومُفسَّر (Explainable)، وليس
+  Deep RL كامل — قرار متعمّد لتفادي "صندوق أسود" غير موثوق في قرارات مالية.
+- **ML Filter** يحتاج 50 صفقة فعلية كحد أدنى للتدريب الجدّي؛ قبل ذلك يعمل بقاعدة
+  احتياطية (Fallback) مبنية على درجة ثقة Rules Engine فقط.

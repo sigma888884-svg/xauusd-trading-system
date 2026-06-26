@@ -217,10 +217,144 @@ def detect_order_blocks(df: pd.DataFrame, impulse_atr_mult: float = 1.5) -> List
     return structures
 
 
-def analyze_timeframe(candles: list) -> List[Structure]:
+def detect_liquidity_sweep(df: pd.DataFrame, lookback: int = 20) -> List[Structure]:
+    """
+    Liquidity Sweep: اختراق سريع لقمة/قاع سوينغ سابق بـ"ذيل" شمعة طويل، يتبعه رجوع
+    سريع (إغلاق داخل النطاق السابق) — يدل على اصطياد سيولة قبل الانعكاس.
+    """
+    df = find_swings(df, left=2, right=2)
+    structures = []
+    n = len(df)
+
+    for i in range(lookback, n):
+        recent = df.iloc[max(0, i - lookback):i]
+        recent_highs = recent[recent["swing_high"]]["high"]
+        recent_lows = recent[recent["swing_low"]]["low"]
+
+        candle = df.iloc[i]
+        body = abs(candle["close"] - candle["open"])
+        upper_wick = candle["high"] - max(candle["close"], candle["open"])
+        lower_wick = min(candle["close"], candle["open"]) - candle["low"]
+
+        if not recent_highs.empty:
+            last_high = recent_highs.iloc[-1]
+            swept_high = candle["high"] > last_high and candle["close"] < last_high
+            if swept_high and upper_wick > body * 1.2:
+                structures.append(Structure(
+                    type="LIQUIDITY_SWEEP", direction="bearish", index=i,
+                    price_level=candle["close"], confidence=0.6,
+                    meta={"swept_level": last_high, "kind": "sell_side_grab"},
+                ))
+
+        if not recent_lows.empty:
+            last_low = recent_lows.iloc[-1]
+            swept_low = candle["low"] < last_low and candle["close"] > last_low
+            if swept_low and lower_wick > body * 1.2:
+                structures.append(Structure(
+                    type="LIQUIDITY_SWEEP", direction="bullish", index=i,
+                    price_level=candle["close"], confidence=0.6,
+                    meta={"swept_level": last_low, "kind": "buy_side_grab"},
+                ))
+
+    return structures
+
+
+def detect_premium_discount(df: pd.DataFrame, lookback: int = 50) -> List[Structure]:
+    """
+    Premium / Discount Zones: تقسيم نطاق آخر N شمعة إلى 3 أثلاث.
+    الثلث الأعلى = Premium (منطقة بيع مفضّلة)، الثلث الأدنى = Discount (منطقة شراء مفضّلة)،
+    الثلث الأوسط = Equilibrium (50%).
+    """
+    structures = []
+    n = len(df)
+    if n < lookback:
+        return structures
+
+    window = df.iloc[-lookback:]
+    range_high = window["high"].max()
+    range_low = window["low"].min()
+    range_size = range_high - range_low
+    if range_size <= 0:
+        return structures
+
+    equilibrium = range_low + range_size * 0.5
+    premium_start = range_low + range_size * 0.66
+    discount_end = range_low + range_size * 0.33
+
+    last_close = df.iloc[-1]["close"]
+    last_index = n - 1
+
+    if last_close >= premium_start:
+        zone = "premium"
+        direction = "bearish"  # منطقة مفضّلة للبيع
+        confidence = 0.5
+    elif last_close <= discount_end:
+        zone = "discount"
+        direction = "bullish"  # منطقة مفضّلة للشراء
+        confidence = 0.5
+    else:
+        zone = "equilibrium"
+        direction = "bullish" if last_close > equilibrium else "bearish"
+        confidence = 0.3
+
+    structures.append(Structure(
+        type="PREMIUM_DISCOUNT", direction=direction, index=last_index,
+        price_level=last_close, zone_high=range_high, zone_low=range_low,
+        confidence=confidence,
+        meta={"zone": zone, "equilibrium": equilibrium},
+    ))
+    return structures
+
+
+def detect_supply_demand_zones(df: pd.DataFrame, base_candles: int = 3, impulse_atr_mult: float = 1.3) -> List[Structure]:
+    """
+    SND/SNR (Supply & Demand / Support & Resistance) مبسّط:
+    منطقة "تجميع" (شموع صغيرة متلاصقة، Base) قبل حركة اندفاعية قوية = منطقة عرض/طلب.
+    شبيهة بـOrder Block لكن تعتمد على عدة شموع "قاعدة" بدل شمعة واحدة فقط.
+    """
+    structures = []
+    n = len(df)
+    if n < base_candles + 3:
+        return structures
+
+    df = df.copy()
+    df["range"] = df["high"] - df["low"]
+    atr = df["range"].rolling(window=10, min_periods=3).mean()
+
+    for i in range(base_candles, n):
+        impulse_body = abs(df.loc[i, "close"] - df.loc[i, "open"])
+        ref_atr = atr[i] if not np.isnan(atr[i]) else df.loc[i, "range"]
+        is_impulsive = impulse_body >= impulse_atr_mult * ref_atr
+        if not is_impulsive:
+            continue
+
+        base_window = df.iloc[i - base_candles:i]
+        base_avg_body = (base_window["close"] - base_window["open"]).abs().mean()
+        is_consolidation = base_avg_body < ref_atr * 0.6
+        if not is_consolidation:
+            continue
+
+        bullish_impulse = df.loc[i, "close"] > df.loc[i, "open"]
+        zone_high = base_window["high"].max()
+        zone_low = base_window["low"].min()
+
+        structures.append(Structure(
+            type="SND" if bullish_impulse else "SNR",
+            direction="bullish" if bullish_impulse else "bearish",
+            index=i - 1,
+            price_level=(zone_high + zone_low) / 2,
+            zone_high=zone_high, zone_low=zone_low,
+            confidence=0.55,
+            meta={"base_candles": base_candles},
+        ))
+
+    return structures
+
+
+def analyze_timeframe(candles: list, include_liquidity: bool = True) -> List[Structure]:
     """
     نقطة الدخول الرئيسية: تحلل قائمة شموع فريم واحد وتُرجع كل الهياكل المكتشفة
-    (BOS, CHoCH, FVG, OB) مرتبة بترتيب ظهورها.
+    (BOS, CHoCH, FVG, OB, SND/SNR, LIQUIDITY_SWEEP, PREMIUM_DISCOUNT) مرتبة بترتيب ظهورها.
     """
     if not candles or len(candles) < 6:
         return []
@@ -231,6 +365,12 @@ def analyze_timeframe(candles: list) -> List[Structure]:
     structures += detect_bos_choch(df)
     structures += detect_fvg(df)
     structures += detect_order_blocks(df)
+    structures += detect_supply_demand_zones(df)
+
+    if include_liquidity and len(df) >= 25:
+        structures += detect_liquidity_sweep(df)
+    if len(df) >= 50:
+        structures += detect_premium_discount(df)
 
     structures.sort(key=lambda s: s.index)
     return structures

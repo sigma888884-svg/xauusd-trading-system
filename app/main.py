@@ -1,34 +1,42 @@
 """
 نقطة الدخول الرئيسية لتطبيق FastAPI.
 
-Endpoints:
+Endpoints أساسية هنا:
 - POST /webhook/tradingview   : يستقبل تنبيهات TradingView
-- GET  /alerts                : عرض آخر التنبيهات المخزنة
-- GET  /signals                : عرض آخر الإشارات المكتشفة
-- POST /backtest/run          : تشغيل Backtest على بيانات تاريخية (CSV)
 - GET  /health                : فحص صحة الخدمة
+
+باقي الـEndpoints منظَّمة في app/routes/:
+- /alerts, /signals       -> app/routes/signals.py
+- /backtest/run           -> app/routes/backtest.py
+- /news, /news/refresh    -> app/routes/news.py
 """
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db
 from app.models import Alert, Signal
-from app.schemas import WebhookAlert, SignalOut, BacktestRequest
+from app.schemas import WebhookAlert
 from app.config import settings
 from app.rules_engine import analyze_timeframe, Structure
 from app.llm_interpreter import interpret_signals
 from app.telegram_bot import send_telegram_message, format_signal_message
-from app.backtester import run_backtest
+from app.routes import signals as signals_routes
+from app.routes import backtest as backtest_routes
+from app.routes import news as news_routes
 
 
 app = FastAPI(
-    title="XAUUSD Smart Trading System (MVP)",
-    description="نظام تداول ذكي MVP لزوج الذهب: Webhook + Rules Engine + LLM + Telegram + Backtester",
-    version="0.1.0",
+    title="XAUUSD Smart Trading System",
+    description="نظام تداول ذكي لزوج الذهب: Webhook + Rules Engine (SMC/ICT) + ML + RL + News + Telegram + Backtester",
+    version="0.2.0",
 )
+
+app.include_router(signals_routes.router)
+app.include_router(backtest_routes.router)
+app.include_router(news_routes.router)
 
 
 @app.on_event("startup")
@@ -48,7 +56,7 @@ async def tradingview_webhook(payload: WebhookAlert, db: Session = Depends(get_d
     التدفق:
     1) التحقق من secret
     2) تخزين التنبيه الخام في قاعدة البيانات
-    3) إن وُجدت شموع (candles) -> تشغيل Rules Engine لاكتشاف OB/FVG/BOS/CHoCH
+    3) إن وُجدت شموع (candles) -> تشغيل Rules Engine لاكتشاف الهياكل (OB/FVG/BOS/CHoCH/SND/SNR/...)
     4) تمرير الإشارات لـLLM للتفسير + القرار
     5) تخزين الإشارات + إرسال إشعار Telegram
     """
@@ -74,7 +82,7 @@ async def tradingview_webhook(payload: WebhookAlert, db: Session = Depends(get_d
         structures: List[Structure] = analyze_timeframe(payload.candles)
 
         signals_dicts = []
-        for s in structures[-10:]:  # نأخذ آخر 10 هياكل لتفسير مركّز
+        for s in structures[-10:]:
             signals_dicts.append({
                 "type": s.type,
                 "direction": s.direction,
@@ -110,7 +118,6 @@ async def tradingview_webhook(payload: WebhookAlert, db: Session = Depends(get_d
 
         db.commit()
 
-        # إرسال إشعار Telegram لآخر إشارة فقط (الأهم) لتجنب الإسبام
         if created_signals:
             last_sig = created_signals[-1]
             text = format_signal_message(
@@ -130,7 +137,6 @@ async def tradingview_webhook(payload: WebhookAlert, db: Session = Depends(get_d
             last_sig.notified = sent
             db.commit()
     else:
-        # تنبيه بدون شموع: مجرد تسجيل + إشعار مبسط (مثلاً تنبيه سعري من Pine Script)
         text = (
             f"📩 تنبيه جديد - {payload.symbol} ({payload.timeframe})\n"
             f"النوع: {payload.alert_type} | السعر: {payload.price}\n"
@@ -146,64 +152,4 @@ async def tradingview_webhook(payload: WebhookAlert, db: Session = Depends(get_d
         "alert_id": alert.id,
         "signals_created": len(created_signals),
         "llm_result": llm_result,
-    }
-
-
-@app.get("/alerts")
-def list_alerts(limit: int = 20, db: Session = Depends(get_db)):
-    alerts = db.query(Alert).order_by(Alert.received_at.desc()).limit(limit).all()
-    return [
-        {
-            "id": a.id,
-            "received_at": a.received_at,
-            "symbol": a.symbol,
-            "timeframe": a.timeframe,
-            "alert_type": a.alert_type,
-            "price": a.price,
-            "processed": a.processed,
-        }
-        for a in alerts
-    ]
-
-
-@app.get("/signals", response_model=List[SignalOut])
-def list_signals(
-    limit: int = 20,
-    symbol: Optional[str] = None,
-    timeframe: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    q = db.query(Signal)
-    if symbol:
-        q = q.filter(Signal.symbol == symbol)
-    if timeframe:
-        q = q.filter(Signal.timeframe == timeframe)
-    return q.order_by(Signal.created_at.desc()).limit(limit).all()
-
-
-@app.post("/backtest/run")
-def backtest_run(req: BacktestRequest):
-    """
-    يشغّل الـBacktester على ملف CSV تاريخي (أعمدة: time,open,high,low,close,volume).
-    مثال: POST /backtest/run
-    {"strategy_file": "strategies/xauusd_smc.yaml", "csv_file": "data/xauusd_1h.csv"}
-    """
-    try:
-        result = run_backtest(
-            csv_file=req.csv_file,
-            strategy_file=req.strategy_file,
-            initial_balance=req.initial_balance,
-            risk_per_trade_pct=req.risk_per_trade_pct,
-        )
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    return {
-        "final_balance": result.final_balance,
-        "total_trades": len(result.trades),
-        "win_rate_pct": result.win_rate,
-        "total_pnl": result.total_pnl,
-        "max_drawdown_pct": result.max_drawdown,
     }

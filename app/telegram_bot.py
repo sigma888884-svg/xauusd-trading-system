@@ -39,3 +39,35 @@ def format_signal_message(alert: dict, signal: dict, llm_result: dict) -> str:
         f"القرار المقترح: <b>{llm_result.get('recommendation')}</b> "
         f"(ثقة: {llm_result.get('confidence')})"
     )
+
+
+def format_trade_executed_message(trade: dict) -> str:
+    emoji = "📈" if trade.get("direction") == "bullish" else "📉"
+    return (
+        f"{emoji} <b>تم تنفيذ صفقة</b>\n"
+        f"الاتجاه: <b>{trade.get('direction')}</b> | النوع: {trade.get('signal_type')}\n"
+        f"الدخول: <code>{trade.get('entry_price')}</code>\n"
+        f"SL: <code>{trade.get('sl')}</code> | TP: <code>{trade.get('tp')}</code>"
+    )
+
+
+def format_news_warning_message(title: str, event_time: str, impact: str) -> str:
+    return (
+        f"⚠️ <b>تحذير: خبر اقتصادي {impact.upper()} قادم</b>\n"
+        f"{title}\n"
+        f"الوقت: {event_time}\n"
+        f"يُفضّل تقليل/إيقاف الدخول في صفقات جديدة حول هذا الوقت."
+    )
+
+
+def format_daily_summary_message(stats: dict) -> str:
+    pnl = stats.get("total_pnl", 0)
+    pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+    return (
+        f"📊 <b>الملخص اليومي - {stats.get('date', '')}</b>\n\n"
+        f"عدد الصفقات: <b>{stats.get('total_trades', 0)}</b>\n"
+        f"الفوز: {stats.get('wins', 0)} | الخسارة: {stats.get('losses', 0)}\n"
+        f"نسبة الفوز: <b>{stats.get('win_rate', 0)}%</b>\n"
+        f"{pnl_emoji} صافي الربح/الخسارة: <b>{pnl}$</b>\n"
+        f"أقصى تراجع: {stats.get('max_drawdown_pct', 0)}%"
+    )
