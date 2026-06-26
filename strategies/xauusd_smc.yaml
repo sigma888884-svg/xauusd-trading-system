@@ -13,16 +13,18 @@ timeframes:
   entry: ["1m"]                   # فريم الدخول الدقيق (تأكيد سعري)
 
 entry_rules:
-  required_structures: ["BOS", "CHoCH", "OB"]
+  required_structures: ["BOS", "CHoCH", "OB", "SND", "SNR", "REVERSAL_PINBAR", "REVERSAL_ENGULFING"]
   min_confidence: 0.55
   require_fvg_confluence: true     # يفضّل أن يكون هناك FVG قريب من منطقة OB
   max_distance_pips_to_ob: 50      # أقصى مسافة سعرية مقبولة لاعتبار OB صالحاً للدخول
 
 risk_management:
-  reward_risk_ratio: 2.0           # نسبة الربح إلى الخسارة المستهدفة
-  sl_buffer: 0.5                   # هامش إضافي (بالدولار) أسفل/أعلى منطقة OB لوضع SL
-  risk_per_trade_pct: 1.0          # % من رأس المال لكل صفقة
-  max_daily_trades: 5
+  reward_risk_ratio: 2.5            # احتياطي (يُستخدم فقط لو sl_usd/tp_usd غير محددين)
+  sl_buffer: 0.5
+  sl_usd: 5.0                       # وقف خسارة ثابت 5$ (~ 40-60 بيب حسب تعريف الوسيط)
+  tp_usd: 15.0                      # هدف ربح ثابت 15$ (~ 100-200 بيب حسب تعريف الوسيط)
+  risk_per_trade_pct: 1.0
+  max_daily_trades: 4               # مضاربة يومية: 1-4 صفقات كحد أقصى يومياً
   max_daily_loss_pct: 3.0
 
 sessions:

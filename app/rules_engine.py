@@ -351,10 +351,84 @@ def detect_supply_demand_zones(df: pd.DataFrame, base_candles: int = 3, impulse_
     return structures
 
 
+def detect_reversal_patterns(df: pd.DataFrame, swing_lookback: int = 3) -> List[Structure]:
+    """
+    أنماط شموع الانعكاس الكلاسيكية، تُحسب فقط عند ظهورها قرب قمة/قاع سوينغ
+    (لتفادي إشارات انعكاس عشوائية في منتصف الاتجاه بدون سياق):
+    - Pin Bar / Hammer / Shooting Star: ذيل طويل (>60% من مدى الشمعة) في اتجاه الانعكاس
+    - Bullish/Bearish Engulfing: شمعة تبتلع جسم الشمعة السابقة بالكامل وعكس اتجاهها
+    """
+    df = find_swings(df, left=2, right=2)
+    structures = []
+    n = len(df)
+
+    for i in range(swing_lookback, n):
+        c = df.iloc[i]
+        body = abs(c["close"] - c["open"])
+        candle_range = c["high"] - c["low"]
+        if candle_range <= 0:
+            continue
+
+        upper_wick = c["high"] - max(c["close"], c["open"])
+        lower_wick = min(c["close"], c["open"]) - c["low"]
+
+        near_recent_low = df.iloc[max(0, i - swing_lookback):i]["swing_low"].any()
+        near_recent_high = df.iloc[max(0, i - swing_lookback):i]["swing_high"].any()
+
+        # --- Pin Bar / Hammer (انعكاس صاعد) ---
+        if near_recent_low and lower_wick >= candle_range * 0.6 and body <= candle_range * 0.35:
+            structures.append(Structure(
+                type="REVERSAL_PINBAR", direction="bullish", index=i,
+                price_level=c["close"], confidence=0.55,
+                meta={"pattern": "hammer"},
+            ))
+
+        # --- Shooting Star (انعكاس هابط) ---
+        if near_recent_high and upper_wick >= candle_range * 0.6 and body <= candle_range * 0.35:
+            structures.append(Structure(
+                type="REVERSAL_PINBAR", direction="bearish", index=i,
+                price_level=c["close"], confidence=0.55,
+                meta={"pattern": "shooting_star"},
+            ))
+
+        # --- Engulfing (يحتاج الشمعة السابقة) ---
+        if i >= 1:
+            prev = df.iloc[i - 1]
+            prev_body = abs(prev["close"] - prev["open"])
+            prev_bearish = prev["close"] < prev["open"]
+            prev_bullish = prev["close"] > prev["open"]
+            curr_bullish = c["close"] > c["open"]
+            curr_bearish = c["close"] < c["open"]
+
+            bullish_engulf = (
+                near_recent_low and prev_bearish and curr_bullish and
+                c["close"] >= prev["open"] and c["open"] <= prev["close"] and body > prev_body
+            )
+            bearish_engulf = (
+                near_recent_high and prev_bullish and curr_bearish and
+                c["close"] <= prev["open"] and c["open"] >= prev["close"] and body > prev_body
+            )
+
+            if bullish_engulf:
+                structures.append(Structure(
+                    type="REVERSAL_ENGULFING", direction="bullish", index=i,
+                    price_level=c["close"], confidence=0.6,
+                    meta={"pattern": "bullish_engulfing"},
+                ))
+            if bearish_engulf:
+                structures.append(Structure(
+                    type="REVERSAL_ENGULFING", direction="bearish", index=i,
+                    price_level=c["close"], confidence=0.6,
+                    meta={"pattern": "bearish_engulfing"},
+                ))
+
+    return structures
+
+
 def analyze_timeframe(candles: list, include_liquidity: bool = True) -> List[Structure]:
     """
     نقطة الدخول الرئيسية: تحلل قائمة شموع فريم واحد وتُرجع كل الهياكل المكتشفة
-    (BOS, CHoCH, FVG, OB, SND/SNR, LIQUIDITY_SWEEP, PREMIUM_DISCOUNT) مرتبة بترتيب ظهورها.
+    (BOS, CHoCH, FVG, OB, SND/SNR, LIQUIDITY_SWEEP, PREMIUM_DISCOUNT, REVERSAL_*) مرتبة بترتيب ظهورها.
     """
     if not candles or len(candles) < 6:
         return []
@@ -366,6 +440,7 @@ def analyze_timeframe(candles: list, include_liquidity: bool = True) -> List[Str
     structures += detect_fvg(df)
     structures += detect_order_blocks(df)
     structures += detect_supply_demand_zones(df)
+    structures += detect_reversal_patterns(df)
 
     if include_liquidity and len(df) >= 25:
         structures += detect_liquidity_sweep(df)
