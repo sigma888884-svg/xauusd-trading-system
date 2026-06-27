@@ -313,6 +313,20 @@
       </div>
     </div>
 
+    <div class="grid-bottom" style="margin-top:14px; grid-template-columns:2fr 1fr;">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">نسبة النجاح التراكمية — من الصفقة الأولى</div>
+          <div class="panel-tag">التفكير الاحتمالي: الحكم على العيّنة الكاملة، لا صفقة واحدة</div>
+        </div>
+        <div id="runningWinChart" style="height:150px;"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">حالة الانضباط النفسي</div></div>
+        <div class="summary-mini" id="disciplinePanel" style="grid-template-columns:1fr;"></div>
+      </div>
+    </div>
+
     <div class="footnote">
       <b>ملاحظة بالأمانة:</b> كل الأرقام في هذي اللوحة محسوبة من Backtest حقيقي على بيانات XAUUSD فعلية (2022-2026)، وليست أرقامًا افتراضية أو تداولًا مباشرًا حاليًا.
     </div>
@@ -468,6 +482,29 @@ async function loadDashboard(){
     <div><div class="l">متوسط الصفقات/يوم</div><div class="v">${data.trades_per_day}</div></div>
     <div><div class="l">Expectancy</div><div class="v">${fmtMoney(data.expectancy)}</div></div>
   `;
+
+  // ===== نسبة النجاح التراكمية =====
+  if (data.running_win_rate && data.running_win_rate.length){
+    const rwChart = LightweightCharts.createChart(document.getElementById('runningWinChart'), {
+      layout:{ background:{color:'transparent'}, textColor:'#6b7585', fontFamily:'JetBrains Mono', fontSize:10 },
+      grid:{ vertLines:{visible:false}, horzLines:{color:'#161a22'} },
+      rightPriceScale:{ borderColor:'#212733' },
+      timeScale:{ borderColor:'#212733' },
+    });
+    const rwSeries = rwChart.addLineSeries({ color:'#d9a94e', lineWidth:2 });
+    rwSeries.setData(data.running_win_rate.map(p => ({ time: p.trade_number, value: p.running_win_rate })));
+    rwChart.timeScale().fitContent();
+  }
+
+  // ===== حالة الانضباط =====
+  if (data.discipline){
+    const d = data.discipline;
+    document.getElementById('disciplinePanel').innerHTML = `
+      <div><div class="l">إجمالي الصفقات المُراقبة</div><div class="v">${d.total_trades_seen}</div></div>
+      <div><div class="l">سلسلة الخسائر الحالية</div><div class="v">${d.consecutive_losses}</div></div>
+      <div><div class="l">حالة التبريد (Cooldown)</div><div class="v" style="color:${d.in_cooldown?'var(--sell)':'var(--buy)'}">${d.in_cooldown?'نشط':'غير نشط'}</div></div>
+    `;
+  }
 }
 
 loadDashboard();

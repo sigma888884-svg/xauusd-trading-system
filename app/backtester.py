@@ -20,6 +20,7 @@ import pandas as pd
 import yaml
 
 from app.rules_engine import analyze_timeframe, Structure
+from app.discipline_engine import DisciplineEngine
 
 
 @dataclass
@@ -102,6 +103,7 @@ class CandleByCandleBacktester:
         fixed_risk_usd: Optional[float] = None,
         atr_sl_mult: Optional[float] = None,
         atr_tp_mult: Optional[float] = None,
+        use_discipline_engine: bool = False,
     ):
         self.strategy = strategy
         self.balance = initial_balance
@@ -116,6 +118,8 @@ class CandleByCandleBacktester:
         self.atr_sl_mult = atr_sl_mult   # SL = ATR الحالي × هذا المضاعف (يتكيف مع التقلب)
         self.atr_tp_mult = atr_tp_mult
         self._atr_series: Optional[pd.Series] = None
+        self.use_discipline_engine = use_discipline_engine
+        self.discipline = DisciplineEngine() if use_discipline_engine else None
 
         self.signal_filter: Optional[Callable[[Structure, dict], bool]] = None
         self.ml_scorer: Optional[Callable[[Structure, dict], float]] = None
@@ -189,6 +193,9 @@ class CandleByCandleBacktester:
                     equity_curve.append(self.balance)
                     trades.append(open_trade)
 
+                    if self.discipline:
+                        self.discipline.record_trade_result(open_trade.result)
+
                     daily_pnl[day_key] = daily_pnl.get(day_key, 0) + pnl
                     open_trade = None
                 continue
@@ -197,6 +204,10 @@ class CandleByCandleBacktester:
             if daily_trade_count.get(day_key, 0) >= self.max_daily_trades:
                 continue
             if daily_pnl.get(day_key, 0) <= -(self.initial_balance * self.max_daily_loss_pct / 100):
+                continue
+
+            # --- 3.5) محرك الانضباط: هل النظام في وضع "تبريد" بعد خسائر متتالية؟ ---
+            if self.discipline and not self.discipline.should_allow_trade():
                 continue
 
             # --- 4) هل ظهرت إشارة جديدة عند هذا الـindex بالضبط؟ ---
