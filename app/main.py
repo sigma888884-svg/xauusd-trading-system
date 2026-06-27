@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db
@@ -26,6 +27,7 @@ from app.telegram_bot import send_telegram_message, format_signal_message
 from app.routes import signals as signals_routes
 from app.routes import backtest as backtest_routes
 from app.routes import news as news_routes
+from app.routes import dashboard as dashboard_routes
 
 
 app = FastAPI(
@@ -34,9 +36,17 @@ app = FastAPI(
     version="0.2.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # MVP: مفتوح للجميع. للإنتاج الحقيقي حدد دومين الواجهة فقط.
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(signals_routes.router)
 app.include_router(backtest_routes.router)
 app.include_router(news_routes.router)
+app.include_router(dashboard_routes.router)
 
 
 @app.on_event("startup")

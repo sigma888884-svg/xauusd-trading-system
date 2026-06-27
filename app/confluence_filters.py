@@ -18,6 +18,19 @@ import pandas as pd
 
 from app.rules_engine import Structure
 
+def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """
+    Average True Range: مقياس تقلب فعلي بالدولار، يُستخدم لتكييف SL/TP مع حالة
+    السوق الحالية بدل قيمة ثابتة (مفيد جداً عند مقارنة فترات تقلب مختلفة جداً
+    مثل 2015 الهادئة و2024-2026 شديدة التقلب).
+    """
+    high_low = df["high"] - df["low"]
+    high_close = (df["high"] - df["close"].shift()).abs()
+    low_close = (df["low"] - df["close"].shift()).abs()
+    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    return true_range.rolling(window=period, min_periods=1).mean()
+
+
 # جلسات لندن ونيويورك (UTC) - الأكثر نشاطاً للذهب عادة
 KILL_ZONES_UTC = [
     (dtime(7, 0), dtime(10, 0)),    # لندن

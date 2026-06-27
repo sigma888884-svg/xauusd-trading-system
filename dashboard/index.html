@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XAUUSD — نظام التداول الذكي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.1.3/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{
+    --bg-0:#080a0d;
+    --bg-1:#0e1116;
+    --bg-2:#141821;
+    --bg-3:#1a1f2b;
+    --border:#212733;
+    --border-soft:#1a1f29;
+    --text-0:#eef1f5;
+    --text-1:#aab3c0;
+    --text-2:#6b7585;
+    --gold:#d9a94e;
+    --gold-soft:#f0c97a;
+    --gold-dim:rgba(217,169,78,0.14);
+    --buy:#34b075;
+    --buy-dim:rgba(52,176,117,0.13);
+    --sell:#e2615f;
+    --sell-dim:rgba(226,97,95,0.13);
+    --mono:'JetBrains Mono', monospace;
+    --sans:'IBM Plex Sans Arabic', system-ui, sans-serif;
+    --radius:14px;
+    --radius-sm:9px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(217,169,78,0.06), transparent 60%),
+      var(--bg-0);
+    color:var(--text-0);
+    font-family:var(--sans);
+    font-size:14px;
+    line-height:1.45;
+    min-height:100vh;
+  }
+  .num{font-family:var(--mono); letter-spacing:-0.02em;}
+  .app{display:grid; grid-template-columns:84px 1fr; min-height:100vh;}
+
+  /* ===== الشريط الجانبي ===== */
+  .rail{
+    background:var(--bg-1);
+    border-left:1px solid var(--border-soft);
+    display:flex; flex-direction:column; align-items:center;
+    padding:20px 0; gap:6px;
+  }
+  .rail-logo{
+    width:38px; height:38px; border-radius:10px;
+    background:linear-gradient(150deg, var(--gold-soft), #8a6420);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; color:#1a1206; font-size:15px; margin-bottom:18px;
+    box-shadow:0 0 22px rgba(217,169,78,0.35);
+  }
+  .rail-item{
+    width:46px; height:46px; border-radius:var(--radius-sm);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--text-2); cursor:pointer; font-size:18px;
+    transition:background .15s, color .15s;
+  }
+  .rail-item:hover{background:var(--bg-2); color:var(--text-1);}
+  .rail-item.active{background:var(--gold-dim); color:var(--gold-soft);}
+  .rail-spacer{flex:1;}
+  .rail-pulse{
+    width:46px; height:46px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  .rail-pulse::before{
+    content:''; position:absolute; inset:0; border-radius:50%;
+    border:1.5px solid var(--gold); opacity:.45;
+    animation:pulse 2.4s ease-out infinite;
+  }
+  .rail-pulse span{font-size:11px; color:var(--gold-soft); font-weight:600;}
+  @keyframes pulse{
+    0%{transform:scale(.7); opacity:.6;}
+    100%{transform:scale(1.6); opacity:0;}
+  }
+
+  /* ===== المحتوى ===== */
+  .main{padding:18px 22px 32px; max-width:1500px; width:100%; margin:0 auto;}
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:18px; flex-wrap:wrap; gap:12px;
+  }
+  .price-block{display:flex; align-items:baseline; gap:10px;}
+  .price-block .sym{font-size:13px; color:var(--text-2); font-weight:600; letter-spacing:.04em;}
+  .price-block .price{font-family:var(--mono); font-size:26px; font-weight:600;}
+  .price-block .chg{font-family:var(--mono); font-size:13px; padding:2px 8px; border-radius:6px;}
+  .chg.up{color:var(--buy); background:var(--buy-dim);}
+  .chg.down{color:var(--sell); background:var(--sell-dim);}
+  .top-right{display:flex; align-items:center; gap:14px; color:var(--text-2); font-size:12.5px;}
+  .live-dot{width:7px; height:7px; border-radius:50%; background:var(--buy); display:inline-block; box-shadow:0 0 8px var(--buy); margin-left:5px;}
+  .badge-warn{
+    background:rgba(226,97,95,0.1); color:#e8908e; border:1px solid rgba(226,97,95,0.25);
+    padding:4px 10px; border-radius:7px; font-size:11.5px;
+  }
+
+  /* ===== بطاقات المقاييس ===== */
+  .metrics{
+    display:grid; grid-template-columns:repeat(6, 1fr); gap:12px; margin-bottom:18px;
+  }
+  .mcard{
+    background:var(--bg-1); border:1px solid var(--border-soft); border-radius:var(--radius);
+    padding:14px 16px; display:flex; flex-direction:column; gap:8px;
+  }
+  .mcard .mlabel{font-size:11.5px; color:var(--text-2); font-weight:500;}
+  .mcard .mvalue{font-family:var(--mono); font-size:21px; font-weight:600;}
+  .mcard .msub{font-size:11px; font-family:var(--mono);}
+  .msub.pos{color:var(--buy);} .msub.neg{color:var(--sell);}
+  .mcard.accent .mvalue{color:var(--gold-soft);}
+
+  /* ===== الشبكة الرئيسية ===== */
+  .grid-main{display:grid; grid-template-columns:2.5fr 1fr; gap:14px; margin-bottom:14px;}
+  .panel{
+    background:var(--bg-1); border:1px solid var(--border-soft); border-radius:var(--radius);
+    padding:16px;
+  }
+  .panel-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .panel-title{font-size:13.5px; font-weight:600; color:var(--text-0); display:flex; align-items:center; gap:8px;}
+  .panel-tag{
+    font-size:10.5px; color:var(--text-2); border:1px solid var(--border); border-radius:5px;
+    padding:2px 7px; font-family:var(--mono);
+  }
+  #chart{height:380px; width:100%;}
+
+  .legend{display:flex; gap:14px; font-size:11px; color:var(--text-2); margin-top:8px;}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .legend i{width:9px; height:9px; border-radius:2px; display:inline-block;}
+
+  /* ===== الإشارات المباشرة ===== */
+  .signal-list{display:flex; flex-direction:column; gap:10px; max-height:420px; overflow:auto;}
+  .signal-card{
+    border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:10px 12px;
+    background:var(--bg-2);
+  }
+  .signal-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+  .signal-dir{
+    font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; letter-spacing:.03em;
+  }
+  .signal-dir.buy{background:var(--buy-dim); color:var(--buy);}
+  .signal-dir.sell{background:var(--sell-dim); color:var(--sell);}
+  .signal-time{font-size:11px; color:var(--text-2);}
+  .signal-row{display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; font-family:var(--mono); font-size:11.5px;}
+  .signal-row div span{display:block; color:var(--text-2); font-size:10px; font-family:var(--sans);}
+
+  /* ===== الصف السفلي ===== */
+  .grid-bottom{display:grid; grid-template-columns:1.3fr 0.9fr 1.3fr 1.5fr; gap:14px;}
+  #equityChart{height:160px;}
+  .donut-wrap{display:flex; align-items:center; justify-content:center; gap:16px;}
+  .donut{position:relative; width:120px; height:120px;}
+  .donut svg{transform:rotate(-90deg);}
+  .donut-center{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  }
+  .donut-center .pct{font-family:var(--mono); font-size:20px; font-weight:700; color:var(--gold-soft);}
+  .donut-center .lbl{font-size:10px; color:var(--text-2);}
+  .donut-legend{font-size:11.5px; display:flex; flex-direction:column; gap:8px;}
+  .donut-legend div{display:flex; align-items:center; gap:6px;}
+  .donut-legend i{width:8px; height:8px; border-radius:2px;}
+
+  .heatmap{display:grid; grid-template-columns:repeat(12, 1fr); gap:4px;}
+  .hcell{
+    aspect-ratio:1; border-radius:4px; position:relative; cursor:default;
+  }
+  .hcell:hover::after{
+    content:attr(data-tip); position:absolute; bottom:120%; left:50%; transform:translateX(-50%);
+    background:var(--bg-3); border:1px solid var(--border); padding:4px 7px; border-radius:5px;
+    font-size:10px; font-family:var(--mono); white-space:nowrap; z-index:5; color:var(--text-0);
+  }
+  .hour-labels{display:grid; grid-template-columns:repeat(12,1fr); gap:4px; margin-top:5px;}
+  .hour-labels span{font-size:8.5px; color:var(--text-2); text-align:center; font-family:var(--mono);}
+
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th{text-align:right; color:var(--text-2); font-weight:500; font-size:11px; padding:6px 4px; border-bottom:1px solid var(--border-soft);}
+  td{padding:7px 4px; border-bottom:1px solid var(--border-soft); font-family:var(--mono); font-size:11.5px;}
+  td.dir-buy{color:var(--buy);} td.dir-sell{color:var(--sell);}
+  .pill{font-size:10px; padding:2px 7px; border-radius:5px; font-family:var(--sans);}
+  .pill.win{background:var(--buy-dim); color:var(--buy);} .pill.loss{background:var(--sell-dim); color:var(--sell);}
+
+  .summary-mini{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
+  .summary-mini div{background:var(--bg-2); border-radius:8px; padding:9px 10px;}
+  .summary-mini .l{font-size:10.5px; color:var(--text-2);}
+  .summary-mini .v{font-family:var(--mono); font-size:14px; font-weight:600; margin-top:2px;}
+
+  .footnote{
+    margin-top:16px; font-size:11px; color:var(--text-2); display:flex; align-items:center; gap:7px;
+    border-top:1px solid var(--border-soft); padding-top:12px;
+  }
+  .footnote b{color:var(--gold-soft); font-weight:600;}
+
+  @media (max-width:1100px){
+    .metrics{grid-template-columns:repeat(3,1fr);}
+    .grid-main{grid-template-columns:1fr;}
+    .grid-bottom{grid-template-columns:1fr 1fr;}
+  }
+  @media (max-width:640px){
+    .app{grid-template-columns:1fr;}
+    .rail{display:none;}
+    .metrics{grid-template-columns:repeat(2,1fr);}
+    .grid-bottom{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="rail">
+    <div class="rail-logo">Au</div>
+    <div class="rail-item active">▦</div>
+    <div class="rail-item">⚡</div>
+    <div class="rail-item">📜</div>
+    <div class="rail-item">📈</div>
+    <div class="rail-item">🧠</div>
+    <div class="rail-item">🗞</div>
+    <div class="rail-spacer"></div>
+    <div class="rail-pulse"><span>AI</span></div>
+  </div>
+
+  <div class="main">
+
+    <div class="topbar">
+      <div class="price-block">
+        <span class="sym">XAUUSD</span>
+        <span class="price num" id="livePrice">—</span>
+        <span class="chg num up" id="liveChg">—</span>
+      </div>
+      <div class="top-right">
+        <span id="genNote">يحمّل بيانات حقيقية…</span>
+        <span class="badge-warn">نتائج Backtest تاريخية — وليست تداولاً مباشرًا</span>
+        <span><span class="live-dot"></span>متصل</span>
+      </div>
+    </div>
+
+    <div class="metrics" id="metricsRow">
+      <div class="mcard"><div class="mlabel">إجمالي الإشارات</div><div class="mvalue num">—</div></div>
+      <div class="mcard accent"><div class="mlabel">نسبة النجاح</div><div class="mvalue num">—</div></div>
+      <div class="mcard"><div class="mlabel">صافي الربح</div><div class="mvalue num">—</div></div>
+      <div class="mcard"><div class="mlabel">أقصى تراجع</div><div class="mvalue num">—</div></div>
+      <div class="mcard"><div class="mlabel">عامل الربح PF</div><div class="mvalue num">—</div></div>
+      <div class="mcard"><div class="mlabel">الرصيد الحالي</div><div class="mvalue num">—</div></div>
+    </div>
+
+    <div class="grid-main">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">XAUUSD — هياكل السوق المكتشفة (SMC)</div>
+          <div class="panel-tag">15m · بيانات حقيقية 2022-2026</div>
+        </div>
+        <div id="chart"></div>
+        <div class="legend">
+          <span><i style="background:#34b075"></i> BOS / CHoCH صاعد</span>
+          <span><i style="background:#e2615f"></i> BOS / CHoCH هابط</span>
+          <span><i style="background:#d9a94e"></i> Order Block</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">الإشارات الأخيرة</div>
+          <div class="panel-tag" id="signalCount">—</div>
+        </div>
+        <div class="signal-list" id="signalList"></div>
+      </div>
+    </div>
+
+    <div class="grid-bottom">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">منحنى الأداء</div></div>
+        <div id="equityChart"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">توزيع النتائج</div></div>
+        <div class="donut-wrap">
+          <div class="donut">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="#1a1f29" stroke-width="14"/>
+              <circle id="donutArc" cx="60" cy="60" r="50" fill="none" stroke="#34b075" stroke-width="14" stroke-dasharray="0 314"/>
+            </svg>
+            <div class="donut-center"><div class="pct" id="donutPct">—</div><div class="lbl">نجاح</div></div>
+          </div>
+          <div class="donut-legend">
+            <div><i style="background:#34b075"></i> رابحة <span id="winCount" class="num" style="margin-right:4px;color:var(--text-1)"></span></div>
+            <div><i style="background:#e2615f"></i> خاسرة <span id="lossCount" class="num" style="margin-right:4px;color:var(--text-1)"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">الأداء بحسب الساعة</div>
+          <div class="panel-tag">UTC</div>
+        </div>
+        <div class="heatmap" id="heatmap"></div>
+        <div class="hour-labels" id="hourLabels"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">آخر الصفقات</div></div>
+        <table>
+          <thead><tr><th>الاتجاه</th><th>النوع</th><th>الدخول</th><th>النتيجة</th></tr></thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+        <div class="summary-mini" id="summaryMini"></div>
+      </div>
+    </div>
+
+    <div class="footnote">
+      <b>ملاحظة بالأمانة:</b> كل الأرقام في هذي اللوحة محسوبة من Backtest حقيقي على بيانات XAUUSD فعلية (2022-2026)، وليست أرقامًا افتراضية أو تداولًا مباشرًا حاليًا.
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API_BASE = "https://xauusd-trading-system.onrender.com";
+
+function fmtMoney(n){ return (n<0?'-':'') + '$' + Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0}); }
+
+async function loadDashboard(){
+  let data;
+  try{
+    const res = await fetch(API_BASE + "/dashboard/summary");
+    if(!res.ok) throw new Error("no data");
+    data = await res.json();
+    document.getElementById('genNote').textContent = "بيانات حقيقية محدّثة من الخادم";
+  }catch(e){
+    document.getElementById('genNote').textContent = "تعذّر الاتصال بالخادم — تأكد أن الموقع شغّال";
+    return;
+  }
+
+  // ===== بطاقات المقاييس =====
+  const cards = document.querySelectorAll('#metricsRow .mvalue');
+  cards[0].textContent = data.total_signals.toLocaleString();
+  cards[1].textContent = data.win_rate + '%';
+  cards[2].textContent = fmtMoney(data.total_pnl);
+  cards[2].style.color = data.total_pnl >= 0 ? 'var(--buy)' : 'var(--sell)';
+  cards[3].textContent = data.max_drawdown_pct + '%';
+  cards[4].textContent = data.profit_factor;
+  cards[5].textContent = fmtMoney(data.final_balance);
+
+  // ===== سعر تقريبي من آخر شمعة =====
+  const lastCandle = data.chart_candles[data.chart_candles.length-1];
+  document.getElementById('livePrice').textContent = '$' + lastCandle.close.toFixed(2);
+  const chg = lastCandle.close - data.chart_candles[data.chart_candles.length-2].close;
+  const chgEl = document.getElementById('liveChg');
+  chgEl.textContent = (chg>=0?'+':'') + chg.toFixed(2);
+  chgEl.className = 'chg num ' + (chg>=0?'up':'down');
+
+  // ===== الشارت =====
+  const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+    layout:{ background:{color:'transparent'}, textColor:'#aab3c0', fontFamily:'JetBrains Mono' },
+    grid:{ vertLines:{color:'#161a22'}, horzLines:{color:'#161a22'} },
+    timeScale:{ borderColor:'#212733', timeVisible:true },
+    rightPriceScale:{ borderColor:'#212733' },
+    crosshair:{ mode:1 },
+  });
+  const series = chart.addCandlestickSeries({
+    upColor:'#34b075', downColor:'#e2615f', borderVisible:false,
+    wickUpColor:'#34b075', wickDownColor:'#e2615f',
+  });
+  const candleData = data.chart_candles.map(c => ({
+    time: Math.floor(new Date(c.time).getTime()/1000),
+    open:c.open, high:c.high, low:c.low, close:c.close,
+  }));
+  series.setData(candleData);
+
+  const markers = [];
+  data.chart_structures.forEach(s => {
+    if (s.index < 0 || s.index >= candleData.length) return;
+    if (!['BOS','CHoCH','OB'].includes(s.type)) return;
+    const isBull = s.direction === 'bullish';
+    markers.push({
+      time: candleData[s.index].time,
+      position: isBull ? 'belowBar' : 'aboveBar',
+      color: s.type==='OB' ? '#d9a94e' : (isBull ? '#34b075' : '#e2615f'),
+      shape: isBull ? 'arrowUp' : 'arrowDown',
+      text: s.type,
+    });
+  });
+  series.setMarkers(markers);
+  chart.timeScale().fitContent();
+
+  // ===== منحنى الأداء =====
+  const eqChart = LightweightCharts.createChart(document.getElementById('equityChart'), {
+    layout:{ background:{color:'transparent'}, textColor:'#6b7585', fontFamily:'JetBrains Mono', fontSize:10 },
+    grid:{ vertLines:{visible:false}, horzLines:{color:'#161a22'} },
+    timeScale:{ visible:false },
+    rightPriceScale:{ borderColor:'#212733' },
+    handleScroll:false, handleScale:false,
+  });
+  const eqSeries = eqChart.addAreaSeries({
+    lineColor:'#d9a94e', topColor:'rgba(217,169,78,0.25)', bottomColor:'rgba(217,169,78,0.0)', lineWidth:2,
+  });
+  eqSeries.setData(data.equity_curve.map((v,i) => ({ time: i, value: v })));
+  eqChart.timeScale().fitContent();
+
+  // ===== الدونات =====
+  const total = data.wins + data.losses;
+  const winFrac = total ? data.wins/total : 0;
+  document.getElementById('donutArc').setAttribute('stroke-dasharray', (winFrac*314).toFixed(1)+' 314');
+  document.getElementById('donutPct').textContent = data.win_rate + '%';
+  document.getElementById('winCount').textContent = data.wins;
+  document.getElementById('lossCount').textContent = data.losses;
+
+  // ===== خريطة الحرارة =====
+  const heat = document.getElementById('heatmap');
+  const labels = document.getElementById('hourLabels');
+  heat.innerHTML = ''; labels.innerHTML = '';
+  data.hourly_performance.forEach(h => {
+    const cell = document.createElement('div');
+    cell.className = 'hcell';
+    const alpha = h.trades ? Math.min(0.15 + (h.win_rate/100)*0.85, 1) : 0.05;
+    cell.style.background = h.trades ? `rgba(217,169,78,${alpha})` : '#13161c';
+    cell.setAttribute('data-tip', `${h.hour}:00 — ${h.trades} صفقة — ${h.win_rate}%`);
+    heat.appendChild(cell);
+    const lbl = document.createElement('span');
+    lbl.textContent = h.hour % 3 === 0 ? h.hour : '';
+    labels.appendChild(lbl);
+  });
+
+  // ===== جدول الصفقات =====
+  const tbody = document.getElementById('tradesBody');
+  tbody.innerHTML = '';
+  [...data.recent_trades].reverse().forEach(t => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="${t.direction==='bullish'?'dir-buy':'dir-sell'}">${t.direction==='bullish'?'شراء':'بيع'}</td>
+      <td>${t.signal_type}</td>
+      <td>${t.entry}</td>
+      <td><span class="pill ${t.result==='win'?'win':'loss'}">${t.result==='win'?'+'+t.pnl:t.pnl}$</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // ===== الإشارات (آخر الصفقات كإشارات تجريبية للعرض) =====
+  const sigList = document.getElementById('signalList');
+  sigList.innerHTML = '';
+  document.getElementById('signalCount').textContent = data.total_signals.toLocaleString() + ' إشارة';
+  [...data.recent_trades].reverse().slice(0,8).forEach(t => {
+    const isBuy = t.direction === 'bullish';
+    const card = document.createElement('div');
+    card.className = 'signal-card';
+    card.innerHTML = `
+      <div class="signal-top">
+        <span class="signal-dir ${isBuy?'buy':'sell'}">${isBuy?'شراء':'بيع'} · ${t.signal_type}</span>
+        <span class="signal-time">${new Date(t.time).toLocaleDateString('ar-EG',{day:'numeric',month:'short'})}</span>
+      </div>
+      <div class="signal-row">
+        <div>${t.entry}<span>الدخول</span></div>
+        <div>${t.sl}<span>SL</span></div>
+        <div>${t.tp}<span>TP</span></div>
+      </div>
+    `;
+    sigList.appendChild(card);
+  });
+
+  // ===== ملخص مصغر =====
+  document.getElementById('summaryMini').innerHTML = `
+    <div><div class="l">متوسط الصفقات/يوم</div><div class="v">${data.trades_per_day}</div></div>
+    <div><div class="l">Expectancy</div><div class="v">${fmtMoney(data.expectancy)}</div></div>
+  `;
+}
+
+loadDashboard();
+</script>
+</body>
+</html>

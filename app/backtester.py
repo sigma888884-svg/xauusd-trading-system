@@ -100,6 +100,8 @@ class CandleByCandleBacktester:
         sl_usd: Optional[float] = None,
         tp_usd: Optional[float] = None,
         fixed_risk_usd: Optional[float] = None,
+        atr_sl_mult: Optional[float] = None,
+        atr_tp_mult: Optional[float] = None,
     ):
         self.strategy = strategy
         self.balance = initial_balance
@@ -111,6 +113,9 @@ class CandleByCandleBacktester:
         self.sl_usd = sl_usd
         self.tp_usd = tp_usd
         self.fixed_risk_usd = fixed_risk_usd
+        self.atr_sl_mult = atr_sl_mult   # SL = ATR الحالي × هذا المضاعف (يتكيف مع التقلب)
+        self.atr_tp_mult = atr_tp_mult
+        self._atr_series: Optional[pd.Series] = None
 
         self.signal_filter: Optional[Callable[[Structure, dict], bool]] = None
         self.ml_scorer: Optional[Callable[[Structure, dict], float]] = None
@@ -142,6 +147,13 @@ class CandleByCandleBacktester:
         structures_by_index: Dict[int, List[Structure]] = {}
         for s in all_structures:
             structures_by_index.setdefault(s.index, []).append(s)
+
+        if self.atr_sl_mult is not None:
+            from app.confluence_filters import compute_atr
+            df_candles = pd.DataFrame(candles)
+            for col in ["high", "low", "close"]:
+                df_candles[col] = df_candles[col].astype(float)
+            self._atr_series = compute_atr(df_candles)
 
         equity_curve = [self.balance]
         trades: List[Trade] = []
@@ -205,7 +217,19 @@ class CandleByCandleBacktester:
 
             # --- 5) فتح صفقة جديدة ---
             entry_price = current["close"]
-            if self.sl_usd is not None and self.tp_usd is not None:
+            if self.atr_sl_mult is not None:
+                # SL/TP متكيف مع التقلب الحالي (ATR)، بدل قيمة ثابتة لكل الفترات
+                current_atr = self._atr_series.iloc[i] if self._atr_series is not None else 1.0
+                dynamic_sl = max(current_atr * self.atr_sl_mult, 0.5)
+                dynamic_tp = current_atr * (self.atr_tp_mult or self.atr_sl_mult * self.rr_ratio)
+                if last.direction == "bullish":
+                    sl = entry_price - dynamic_sl
+                    tp = entry_price + dynamic_tp
+                else:
+                    sl = entry_price + dynamic_sl
+                    tp = entry_price - dynamic_tp
+                risk = dynamic_sl
+            elif self.sl_usd is not None and self.tp_usd is not None:
                 # SL/TP ثابت بالدولار (مناسب لمضاربة يومية بأهداف صغيرة)
                 if last.direction == "bullish":
                     sl = entry_price - self.sl_usd
