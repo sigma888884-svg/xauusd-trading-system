@@ -15,6 +15,8 @@ from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db
@@ -47,6 +49,12 @@ app.include_router(signals_routes.router)
 app.include_router(backtest_routes.router)
 app.include_router(news_routes.router)
 app.include_router(dashboard_routes.router)
+
+
+@app.get("/dashboard", include_in_schema=False)
+def serve_dashboard():
+    """يعرض لوحة التحكم المرئية مباشرة على الموقع."""
+    return FileResponse("dashboard/index.html")
 
 
 @app.on_event("startup")
