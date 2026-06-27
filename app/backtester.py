@@ -21,6 +21,7 @@ import yaml
 
 from app.rules_engine import analyze_timeframe, Structure
 from app.discipline_engine import DisciplineEngine
+from app.adaptive_learner import AdaptiveLearner
 
 
 @dataclass
@@ -104,6 +105,9 @@ class CandleByCandleBacktester:
         atr_sl_mult: Optional[float] = None,
         atr_tp_mult: Optional[float] = None,
         use_discipline_engine: bool = False,
+        use_adaptive_learning: bool = False,
+        adaptive_reject_threshold: float = 0.45,
+        adaptive_hard_reject: bool = True,
     ):
         self.strategy = strategy
         self.balance = initial_balance
@@ -120,6 +124,10 @@ class CandleByCandleBacktester:
         self._atr_series: Optional[pd.Series] = None
         self.use_discipline_engine = use_discipline_engine
         self.discipline = DisciplineEngine() if use_discipline_engine else None
+        self.use_adaptive_learning = use_adaptive_learning
+        self.adaptive_reject_threshold = adaptive_reject_threshold
+        self.adaptive_hard_reject = adaptive_hard_reject
+        self.learner = AdaptiveLearner() if use_adaptive_learning else None
 
         self.signal_filter: Optional[Callable[[Structure, dict], bool]] = None
         self.ml_scorer: Optional[Callable[[Structure, dict], float]] = None
@@ -195,6 +203,8 @@ class CandleByCandleBacktester:
 
                     if self.discipline:
                         self.discipline.record_trade_result(open_trade.result)
+                    if self.learner:
+                        self.learner.update(open_trade.signal_type, open_trade.direction, open_trade.result)
 
                     daily_pnl[day_key] = daily_pnl.get(day_key, 0) + pnl
                     open_trade = None
@@ -220,6 +230,17 @@ class CandleByCandleBacktester:
                 continue
             last = actionable[-1]
 
+            risk_multiplier = 1.0
+            if self.learner:
+                if self.adaptive_hard_reject and not self.learner.should_trust_type(last.type, last.direction, self.adaptive_reject_threshold):
+                    continue  # وضع صارم: رفض كامل للنوع الضعيف بعد عيّنة كافية
+                adjusted_conf = self.learner.adjusted_confidence(last.type, last.direction, last.confidence)
+                if self.adaptive_hard_reject:
+                    if adjusted_conf < self.min_confidence:
+                        continue
+                else:
+                    # وضع تدريجي بالحجم: لا نرفض الصفقة، بل نقلّص مخاطرتها حسب الثقة المتعلَّمة
+                    risk_multiplier = max(0.2, min(1.5, adjusted_conf / self.min_confidence))
             context = {"index": i, "time": current["time"], "candle": current}
             if self.signal_filter and not self.signal_filter(last, context):
                 continue
@@ -262,8 +283,8 @@ class CandleByCandleBacktester:
             if risk <= 0:
                 continue
 
-            risk_amount = self.fixed_risk_usd if self.fixed_risk_usd is not None \
-                else self.balance * (self.risk_per_trade_pct / 100.0)
+            risk_amount = (self.fixed_risk_usd if self.fixed_risk_usd is not None
+                else self.balance * (self.risk_per_trade_pct / 100.0)) * risk_multiplier
 
             open_trade = Trade(
                 direction=last.direction,
